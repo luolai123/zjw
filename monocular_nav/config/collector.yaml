@@ -1,0 +1,12 @@
+# Default parameters for synthetic monocular dataset collection.
+output_dir: monocular_nav/data/simulated
+num_frames: 200
+obstacles_per_frame: [3, 7]
+depth_range: [2.0, 8.0]
+size_range: [0.4, 1.2]
+lateral_range: [-2.0, 2.0]
+vertical_range: [-1.0, 1.0]
+yaw_range_deg: [-25.0, 25.0]
+background: [205, 220, 235]
+seed: 13
+overwrite: true

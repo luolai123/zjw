@@ -12,6 +12,13 @@ This repository sketches a monocular camera pipeline that segments safe regions,
 - Place monocular RGB images under `YOPO/data/simulated/images/*.png` and matching binary safety masks under `YOPO/data/simulated/masks/*.png` (1=safe, 0=obstacle).
 - Set pinhole intrinsics and distortion coefficients in `YOPO/config/camera.yaml`.
 
+### Automatic monocular dataset collection
+- Generate synthetic RGB/mask pairs with randomized obstacles using the monocular camera model:
+  ```bash
+  python -m monocular_nav.data.collector --config monocular_nav/config/collector.yaml
+  ```
+- Outputs are written to `monocular_nav/data/simulated/images/` and `monocular_nav/data/simulated/masks/` with a matching `poses.csv` to record yaw/obstacle counts for each frame. You can point the YOPO training scripts at this directory or copy the generated pairs into `YOPO/data/simulated/`.
+
 ### 2) Train (two-stage)
 ```bash
 # Segmentation then motion-offset refinement
