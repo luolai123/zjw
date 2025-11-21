@@ -13,6 +13,20 @@ from monocular_nav.camera import CameraIntrinsics
 from monocular_nav.losses import segmentation_loss, total_trajectory_loss
 
 
+def _build_dataset(dataset_root: Path) -> SegmentationDataset:
+    dataset = SegmentationDataset(dataset_root)
+    if len(dataset) == 0:
+        images_dir = dataset_root / "images"
+        masks_dir = dataset_root / "masks"
+        raise FileNotFoundError(
+            "No training samples were found. "
+            f"Expected matching PNG files under '{images_dir}' and '{masks_dir}'. "
+            "Generate data with the collector (python -m monocular_nav.data.collector "
+            "--config monocular_nav/config/collector.yaml)."
+        )
+    return dataset
+
+
 def train_segmentation(
     dataset_root: Path,
     epochs: int = 5,
@@ -20,7 +34,8 @@ def train_segmentation(
     lr: float = 1e-3,
 ) -> LightweightUNet:
     model = LightweightUNet()
-    loader = DataLoader(SegmentationDataset(dataset_root), batch_size=batch_size, shuffle=True)
+    dataset = _build_dataset(dataset_root)
+    loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
     optim = torch.optim.Adam(model.parameters(), lr=lr)
     model.train()
     for _ in range(epochs):
@@ -46,7 +61,8 @@ def train_motion_module(
     generator = PrimitiveGenerator(camera)
     params = [torch.zeros(5, requires_grad=True) for _ in anchors]
     optim = torch.optim.Adam(params, lr=lr)
-    loader = DataLoader(SegmentationDataset(dataset_root), batch_size=1, shuffle=True)
+    dataset = _build_dataset(dataset_root)
+    loader = DataLoader(dataset, batch_size=1, shuffle=True)
     for _ in range(epochs):
         for images, masks in loader:
             with torch.no_grad():
