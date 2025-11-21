@@ -3,48 +3,70 @@
 YOPO is a lightweight monocular navigation prototype that segments safe regions in an image, maps them to anchor-style motion primitives, and outputs optimized trajectories. The code is written in pure Python/PyTorch and does not require a ROS workspace or a CMake/catkin build.
 
 ## What's Included
-- **YOPO/**: Core planner code with training, inference, and ROS node sketches.
-- **monocular_nav/**: Synthetic data generator and camera helpers used by the YOPO pipeline.
+- **monocular_nav/**: Core planner code with training, inference, synthetic data generation, and a ROS 1 node sketch.
+- **monocular_nav/config/**: Default configuration for the synthetic collector.
+- **monocular_nav/data/**: Generated datasets live here (images, masks, and poses.csv).
 
-## Quickstart
-### 1) Install dependencies
-Create a virtual environment (Python 3.9+) and install PyTorch plus common tooling:
+## Prerequisites
+- Python 3.9+
+- PyTorch (CPU is fine for the demo-sized models)
+- Optional: ROS 1 for the example node
+
+## Environment Setup
 ```bash
 python -m venv .venv
 source .venv/bin/activate
 pip install torch torchvision torchaudio
-pip install numpy opencv-python pyyaml
+pip install numpy opencv-python pyyaml pillow
 ```
 
-### 2) Prepare data and camera config
-- Place monocular RGB images under `YOPO/data/simulated/images/*.png` and matching binary safety masks under `YOPO/data/simulated/masks/*.png` (1=safe, 0=obstacle).
-- Set pinhole intrinsics and distortion coefficients in `YOPO/config/camera.yaml`.
-- To synthesize a toy dataset, run:
-  ```bash
-  python -m monocular_nav.data.collector --config monocular_nav/config/collector.yaml
-  ```
-  which writes RGB/mask pairs and a `poses.csv` into `monocular_nav/data/simulated/`.
+## Generate a Synthetic Dataset
+1. Adjust camera intrinsics in `monocular_nav/config/camera.yaml` if needed.
+2. Optionally tweak dataset parameters (frame count, obstacle ranges, seed) in `monocular_nav/config/collector.yaml`.
+3. Run the collector to populate `monocular_nav/data/simulated/` with RGB frames, binary masks, and a `poses.csv` log:
+   ```bash
+   python -m monocular_nav.data.collector \
+     --config monocular_nav/config/collector.yaml
+   ```
+   Use `--frames` or `--seed` to override the defaults defined in the YAML.
 
-### 3) Train the models
-Run the two-stage training loop (segmentation then motion-offset refinement):
+## Train the Models
+Training is a two-stage routine: semantic segmentation followed by anchor-offset refinement.
 ```bash
-python -m YOPO.train
+python -m monocular_nav.train
 ```
-Trained weights are saved to `YOPO/saved/` for later inference.
+- Expects images under `monocular_nav/data/simulated/images/*.png` and matching masks under `monocular_nav/data/simulated/masks/*.png`.
+- Writes trained segmentation weights to memory during the run; modify `train_segmentation`/`train_motion_module` in `monocular_nav/train.py` to save checkpoints to disk as needed.
 
-### 4) Run an offline inference check
+## Run Offline Inference
+Use `monocular_nav/inference.py` to load weights and produce safe motion primitives from a monocular frame:
 ```bash
-python YOPO/test.py --weights YOPO/saved/segmentation.pth --image path/to/frame.png
-```
-If `--image` is omitted, a blank frame is used to verify the end-to-end plumbing.
+python - <<'PY'
+from pathlib import Path
+import torch
+from monocular_nav.camera import CameraIntrinsics
+from monocular_nav.inference import load_model, run_inference
 
-### 5) ROS usage (optional)
-A minimal ROS 1 node sketch is provided for integration, but no ROS build is required here:
+camera = CameraIntrinsics(fx=320.0, fy=320.0, cx=320.0, cy=240.0)
+model = load_model(Path("./weights/segmentation.pth"))
+# Replace with a real RGB tensor in CHW format, normalized to [0,1]
+image = torch.zeros(3, camera.image_height, camera.image_width)
+trajectories = run_inference(image, model, camera)
+print(f"Produced {len(trajectories)} safe trajectories")
+PY
+```
+Swap in an actual image tensor (e.g., from OpenCV) and the weights produced during training.
+
+## ROS 1 Node (Optional)
+A minimal ROS 1 integration lives in `monocular_nav/ros_nodes/navigation_node.py`:
 ```bash
-rosrun YOPO navigation_node.py _weights:=YOPO/saved/segmentation.pth
+rosrun monocular_nav.navigation_node _weights:=./weights/segmentation.pth \
+  _fx:=320.0 _fy:=320.0 _cx:=320.0 _cy:=240.0
 ```
-The node subscribes to `/camera/image_raw` and publishes optimized trajectories on `/yopo/trajectory` using `rospy`, `sensor_msgs`, `geometry_msgs`, and `cv_bridge`.
+- Subscribes to `/camera/image_raw` (RGB) and publishes a `PoseArray` on `/monocular_nav/trajectory`.
+- Relies on `sensor_msgs`, `geometry_msgs`, `rospy`, and `cv_bridge` to convert images to tensors.
 
-## Notes
-- Unused placeholder directories for controllers and simulators have been removed to keep the repository focused on the monocular navigation prototype.
-- The repository is self-contained Python; there is no separate build step beyond installing dependencies.
+## Tips
+- All paths are relative to the repository root; adjust if running from elsewhere.
+- The synthetic collector is deterministic with the provided seed, making it easy to regenerate the same dataset for debugging.
+- The models are intentionally small to keep experimentation fast on CPU-only machines.
